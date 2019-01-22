@@ -5,11 +5,16 @@ import os
 
 import fuzzy
 from weighted_levenshtein import dam_lev
-from tqdm import tqdm
 
 class SpellChecker:
 
-	def __init__(self, word_set, unigrams, k, costs=None, lamda=1, alphabet='abcdefghijklmnopqrstuvwxyz'):
+	def __init__(self,
+				 word_set,
+				 unigrams,
+				 k,
+				 costs=None,
+				 lamda=1,
+				 alphabet='abcdefghijklmnopqrstuvwxyz'):
 
 		# Initialize alphabet
 		self.alphabet = alphabet
@@ -26,7 +31,7 @@ class SpellChecker:
 		# Weighting likelihood & prior
 		self.lamda = lamda
 
-		# Store unigram probabilities - Use Laplace Add-k Smoothing for log probabilities
+		# Store unigram probabilities
 		self.priors = {}
 		self.k = k
 		self.N = sum((count for word, count in unigrams)) + k*len(unigrams) + k
@@ -72,6 +77,15 @@ class SpellChecker:
 	def __filter_unknown(self, words):
 		return set([word for word in words if word in self.dict_words])
 
+	def __get_words_from_partial_candidates(self, words):
+		candidates = set()
+		for word in words:
+			for dict_word in self.dict_words:
+				if word in dict_word:
+					candidates.add(dict_word)
+					break
+		return candidates
+
 	def __fastGenerateNeighbors(self, left, right, max_dist=2):
 		# Boundary Conditions
 		if max_dist == 0:
@@ -103,153 +117,105 @@ class SpellChecker:
 		# Insertions	
 		for letter in self.alphabet:
 			if left[:-1]+letter+left[-1:]  in self.valid_prefixes:
-				neighbor_set += self.__fastGenerateNeighbors(left[:-1]+letter+left[-1:], right, max_dist-1)
+				neighbor_set += self.__fastGenerateNeighbors(
+					left[:-1]+letter+left[-1:],
+					right,
+					max_dist-1)
 
 		# Substitutions
 		for letter in self.alphabet:
 			if left[:-1]+letter in self.valid_prefixes:
-				neighbor_set += self.__fastGenerateNeighbors(left[:-1]+letter, right, max_dist - (1 if letter != left[-1] else 0))
+				neighbor_set += self.__fastGenerateNeighbors(
+					left[:-1]+letter,
+					right,
+					max_dist - (1 if letter != left[-1] else 0))
 
 		# Transpositions
 		if len(right) >= 1:
 			if left[:-1] + right[0] + left[-1] in self.valid_prefixes:
-				neighbor_set += self.__fastGenerateNeighbors(left[:-1]+right[0]+left[-1], right[1:], max_dist-1)
+				neighbor_set += self.__fastGenerateNeighbors(
+					left[:-1]+right[0]+left[-1],
+					right[1:],
+					max_dist-1)
 
 		return list(set(neighbor_set))
 
 	def __generateCandidates(self, wrong_word):
-		print("*********")
-		print("WRONG WORD: {}".format(wrong_word))
-
 		# Edit Distance based candidates
-		candidates = self.__fastGenerateNeighbors('', wrong_word, 4)
-		print(candidates)
-		#TODO return suggestions with partial word
-		candidates = self.__filter_unknown(candidates)
+		candidates = self.__fastGenerateNeighbors('', wrong_word, 3)
+		known_candidates = self.__filter_unknown(candidates)
 
-		# DMetaphone based candidates
-		metaphone_bkts = self.dmeta(wrong_word)
-		candidates_meta = \
-			self.phonetic_buckets.get(metaphone_bkts[0], []) + \
-			(self.phonetic_buckets.get(metaphone_bkts[1], [])
-			 if metaphone_bkts[1] != None else [])
-		candidates_meta = set(candidates_meta)
+		if len(known_candidates) == 0:
+			partial_candidates = self.__generate_partial_candidates(candidates)
+			print(partial_candidates)
+			return self.__get_words_from_partial_candidates(partial_candidates)
+		else:
+			return known_candidates
 
-		print((candidates_meta.union(candidates)))
-		return (candidates_meta.union(candidates))
+		# TODO DMetaphone based candidates
+		# metaphone_bkts = self.dmeta(wrong_word)
+		# candidates_meta = \
+		# 	self.phonetic_buckets.get(metaphone_bkts[0], []) + \
+		# 	(self.phonetic_buckets.get(metaphone_bkts[1], [])
+		# 	 if metaphone_bkts[1] != None else [])
+		# candidates_meta = set(candidates_meta)
 
-	def generateCandidates(self,wrong_word):
-		return self.__generateCandidates(wrong_word)
+		# return (candidates_meta.union(known_candidates ))
+
+	def __generate_partial_candidates(self, candidates):
+		list = []
+		candidates = sorted(candidates)
+		for i, val in enumerate(candidates):
+			if i < len(candidates) - 1:
+				if not candidates[i] in candidates[i + 1]:
+					list.append(candidates[i])
+			else:
+				list.append(candidates[i])
+		return list
 
 	def __score(self, wrong_word, candidate):
-		dl_dist = dam_lev(wrong_word, candidate, insert_costs=self.insert_costs, substitute_costs=self.substitute_costs, delete_costs=self.delete_costs, transpose_costs=self.transpose_costs) / max(len(wrong_word), len(candidate))
-		log_prior = self.priors[candidate] if candidate in self.priors else math.log(float(self.k) / self.N)
+		dl_dist = dam_lev(wrong_word,
+						  candidate,
+						  insert_costs=self.insert_costs,
+						  substitute_costs=self.substitute_costs,
+						  delete_costs=self.delete_costs,
+						  transpose_costs=self.transpose_costs) / \
+				  max(len(wrong_word), len(candidate))
+		log_prior = self.priors[candidate] if candidate in self.priors \
+			else math.log(float(self.k) / self.N)
 		return -dl_dist + self.lamda * log_prior
 
 	def __rankCandidates(self, wrong_word, candidates):
-		return [(candidate, self.__score(wrong_word, candidate)) for candidate in candidates]
+		return [(candidate, self.__score(wrong_word, candidate))
+				for candidate in candidates]
 
 	def correct(self, wrong_word, top_k=3):
 		candidates = self.__generateCandidates(wrong_word)
 		scores	   = self.__rankCandidates(wrong_word, candidates)
 		return sorted(scores, key= lambda x:-x[1])[:top_k]
 
-"""
-	Read word list file 
-"""
 def read_list_dict(dictfile):
+	"""
+	Read word list file.
+
+	:param dictfile:
+	:return:
+	"""
 	with open(dictfile) as fp:
 		words = set([line.strip() for line in fp])
 	return words
 
-
-"""
-	Reads unigrams and corresponding frequency counts
-"""
 def read_unigram_probs(unigram_file):
+	"""
+	Reads unigrams and corresponding frequency counts.
+
+	:param unigram_file:
+	:return:
+	"""
 	with open(unigram_file) as fp:
-		lines = [[tok.strip() if i==0 else int(tok.strip()) for i, tok in enumerate(line.split('\t'))] for line in fp]
+		lines = [[tok.strip() if i==0 else int(tok.strip())
+				  for i, tok in enumerate(line.split('\t'))] for line in fp]
 	return lines
-
-
-"""
-	Check accuracy of model and compare with other libs
-"""
-def error_file_accuracy(file, checker, fil_type=0, verbose=False, suppress=False):
-
-	# Read file
-	with open(file) as fp:
-		lines = ''.join(fp.readlines())
-
-	# Parse cases
-	ws = []
-	cs = []
-	if fil_type == 0:
-		instances = lines.split('$')
-		for instance in instances:
-			toks = [el for el in instance.split('\n') if el != '']
-			ws += toks[1:]
-			cs += [toks[0] for i in range(len(toks)-1)]
-	elif fil_type == 1:
-		instances = lines.split('\n')
-		for instance in instances:
-			toks = [el for el in instance.split(':') if el != '']
-			curr_ws = [el.split('*')[0].strip() for el in toks[1].split(',')]
-			ws += curr_ws
-			cs += [toks[0].strip() for i in range(len(curr_ws))]
-	elif fil_type == 2:
-		instances = lines.split('$')
-		for instance in instances:
-			toks = [el for el in instance.split('\n') if el != '']
-			ws += [tok.split(' ')[0] for tok in toks[1:]]
-			cs += [toks[0] for i in range(len(toks)-1)]		
-	else:
-		raise NotImplementedError
-
-	"""
-		Get model score
-	"""
-	score = 0.0
-	for w,c in tqdm(zip(ws, cs)):
-		guesses = checker.correct(w, 10)
-		try: 
-			curr_mrr = 1.0 / (1 + next(i for i, (guess,score) in enumerate(guesses) if guess==c))
-		except:
-			curr_mrr = 0.0
-		score += curr_mrr
-		if verbose:
-			print("(%s,%s): %s" % (w,c,str(guesses)))
-	score = score / len(ws)
-
-	if not suppress:
-		"""
-			Compare with PyEnchant Lib
-		"""	
-		import enchant
-		d = enchant.Dict('en_GB')
-		score2 = 0.0
-		for w,c in tqdm(zip(ws, cs)):
-			guesses = d.suggest(w)
-			try: 
-				curr_mrr = 1.0 / (1 + next(i for i, guess in enumerate(guesses) if guess==c))
-			except:
-				curr_mrr = 0.0
-			score2 += curr_mrr
-		score2 = score2 / len(ws)
-
-		"""
-			Compare with Autocorrect Lib
-		"""
-		from autocorrect import spell
-		score3 = 0.0
-		for w,c in tqdm(zip(ws, cs)):
-			if c == spell(w):
-				score3 += 1.0
-		score3 = score3 / len(ws)
-
-		return score, score2, score3
-	else:
-		return score
 
 
 if __name__ == '__main__':
@@ -257,14 +223,10 @@ if __name__ == '__main__':
 	FRESH = True
 	DEBUG = False
 
-	# If executing first time
+	# First time execution
 	if FRESH:
 
-
-		# Read dictionaries for candidate generation
 		word_set = read_list_dict('../Data/lista_parole.txt')
-
-		# Read unigram counts for prior/LM model
 		unigrams = read_unigram_probs('../Data/conteggio_catalogo.txt')
 
 		# Read edit costs
@@ -296,6 +258,7 @@ if __name__ == '__main__':
 			word = line.strip()
 			guesses = checker.correct(word, 4)
 			if DEBUG == True:
-				fout.write('\t'.join([word] + ['(%s,%.2f)'%(guess,score) for guess,score in guesses]) + '\n')
+				fout.write('\t'.join([word] + ['(%s,%.2f)'%(guess,score)
+											   for guess,score in guesses]) + '\n')
 			else:
 				fout.write('\t'.join([word] + [guess for guess, score in guesses]) + '\n')
