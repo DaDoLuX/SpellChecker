@@ -61,7 +61,6 @@ class SpellChecker:
 					self.phonetic_buckets[phonetic_idx[1]] = []
 				self.phonetic_buckets[phonetic_idx[1]].append(word)
 
-
 	def __edit_neighbors_1(self, word):
 		word_len = len(word)
 		deletions  		= [(word[:i]+word[i+1:]) for i in range(word_len)]
@@ -70,10 +69,8 @@ class SpellChecker:
 		transpositions 	= [word[:i]+word[i+1]+word[i]+word[i+2:] for i in range(word_len-1)]
 		return set(deletions + insertions + substitutions + transpositions)
 
-
 	def __filter_unknown(self, words):
 		return set([word for word in words if word in self.dict_words])
-
 
 	def __fastGenerateNeighbors(self, left, right, max_dist=2):
 		# Boundary Conditions
@@ -120,7 +117,6 @@ class SpellChecker:
 
 		return list(set(neighbor_set))
 
-
 	def __generateCandidates(self, wrong_word):
 		print("*********")
 		print("WRONG WORD: {}".format(wrong_word))
@@ -142,20 +138,16 @@ class SpellChecker:
 		print((candidates_meta.union(candidates)))
 		return (candidates_meta.union(candidates))
 
-
 	def generateCandidates(self,wrong_word):
 		return self.__generateCandidates(wrong_word)
-
 
 	def __score(self, wrong_word, candidate):
 		dl_dist = dam_lev(wrong_word, candidate, insert_costs=self.insert_costs, substitute_costs=self.substitute_costs, delete_costs=self.delete_costs, transpose_costs=self.transpose_costs) / max(len(wrong_word), len(candidate))
 		log_prior = self.priors[candidate] if candidate in self.priors else math.log(float(self.k) / self.N)
 		return -dl_dist + self.lamda * log_prior
 
-
 	def __rankCandidates(self, wrong_word, candidates):
 		return [(candidate, self.__score(wrong_word, candidate)) for candidate in candidates]
-
 
 	def correct(self, wrong_word, top_k=3):
 		candidates = self.__generateCandidates(wrong_word)
