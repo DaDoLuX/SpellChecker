@@ -1,6 +1,6 @@
 accendifu	accendifuoco
-anti	aghi	assi	apex	asce
-antif	aghi	assi
-atifu	antifurto	antimuffa	antiruggine	antitarlo
+anti	ant	an	aspi
+antif	aghi	alim	anti
+atifu	alim	anti	arie
 areggia	arella
 aspiavolver	aspirapolvere

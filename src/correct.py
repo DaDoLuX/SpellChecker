@@ -49,7 +49,7 @@ class SpellChecker:
 			self.delete_costs = np.ones((128,))
 			self.transpose_costs  = np.ones((128,128))
 			self.substitute_costs = np.ones((128,128))
-		
+
 		# Build phonetic index - Double Metaphone
 		self.dmeta = fuzzy.DMetaphone()
 		self.phonetic_buckets = {}
@@ -114,7 +114,7 @@ class SpellChecker:
 				left[:-1], right, max_dist-1
 			)
 
-		# Insertions	
+		# Insertions
 		for letter in self.alphabet:
 			if left[:-1]+letter+left[-1:]  in self.valid_prefixes:
 				neighbor_set += self.__fastGenerateNeighbors(
@@ -139,6 +139,9 @@ class SpellChecker:
 					max_dist-1)
 
 		return list(set(neighbor_set))
+
+	def generateCandidates(self, wrong_word):
+		return self.__generateCandidates(wrong_word)
 
 	def __generateCandidates(self, wrong_word):
 		# Edit Distance based candidates
