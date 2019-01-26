@@ -1,4 +1,5 @@
 from src.correct import *
+from collections import defaultdict
 import operator
 
 
@@ -48,8 +49,25 @@ class PhraseChecker(SpellChecker):
 		self.dict_words = self.dict_words.union(set(self.unigram_count.keys()))
 
 		fp.close()
-		
-		
+
+	def __read_bigrams_and_probabilities(self, bigram_file):
+		# bigram_file = '../Data/conteggio_bigram_catalogo_nltk.txt'
+		fp = open(bigram_file, 'r')
+		model = defaultdict(lambda: defaultdict(lambda: 0))
+		for line in fp:
+			line_text = line.strip().lower().split(',')
+			text_list = line_text[0].split(' ')
+			for w1, w2 in bigrams(text_list, pad_right=True, pad_left=True):
+				value = int(line_text[-1:][0])
+				model[w1][w2] = int(value)
+		for w1 in model:
+			total_count = float(sum(model[w1].values()))
+			for w2 in model[w1]:
+				model[w1][w2] /= total_count
+		fp.close()
+
+		return model
+
 	def correct(self, words, alpha=0.01, top_k=3):
 		
 		all_in_dict = True
@@ -106,7 +124,7 @@ class PhraseChecker(SpellChecker):
 								
 			
 		
-		
+		#TODO qui moltiplicare con probabilità bigrams
 		word = words[index_wrong]
 		candidates = list(self.generateCandidates(word))
 		

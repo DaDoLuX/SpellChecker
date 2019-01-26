@@ -1,8 +1,0 @@
-ane	faber	apex	assi
-anel	anello	faber	apex
-anello	anelli	arella
-tend	neri	legno	tende
-capa	cappa	apex
-accia	elica	cappa	assi
-accia	cappa	assi	torcia
-accia	cappa	assi	torcia
