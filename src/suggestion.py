@@ -3,34 +3,47 @@ from collections import defaultdict
 import copy
 
 
+NGRAMS_CATALOGUE = '../Data/conteggio_bigram_catalogo_nltk.txt'
+UNIGRAM_CATALOGUE = '../Data/conteggio_catalogo_nltk.txt'
+
+
 def _read_bigrams_and_probabilities(bigram_file):
-    fp = open(bigram_file, 'r')
-    model = defaultdict(lambda: defaultdict(lambda: 0))
+    file = open(bigram_file, 'r')
+    product_model = defaultdict(lambda: defaultdict(lambda: 0))
     total = 0
-    for line in fp:
+    for line in file:
         line_text = line.strip().lower().split(',')
-        text_list = line_text[0].split(' ')
+        words_list = line_text[0].split(' ')
         value = int(line_text[-1:][0])
         total += value
-        for w1, w2 in bigrams(text_list, pad_right=True, pad_left=True):
-            model[w1][w2] = int(value)
-    generic_model = copy.deepcopy(model)
+        for w1, w2 in bigrams(words_list, pad_right=False, pad_left=True):
+            product_model[w1][w2] = int(value)
+    generic_model = copy.deepcopy(product_model)
 
-    for w1 in model:
-        total_count = float(sum(model[w1].values()))
-        # total += total_count
-        for w2 in model[w1]:
-            model[w1][w2] /= total_count
+    for w1 in product_model:
+        total_count = float(sum(product_model[w1].values()))
+        for w2 in product_model[w1]:
+            product_model[w1][w2] /= total_count
     for w1 in generic_model:
         for w2 in generic_model[w1]:
             generic_model[w1][w2] /= total
-    fp.close()
+    file.close()
 
-    return model, generic_model
+    return product_model, generic_model
 
 
-model, generic_model = _read_bigrams_and_probabilities(
-    '../Data/conteggio_bigram_catalogo_nltk.txt')
+product_model, generic_model = \
+    _read_bigrams_and_probabilities(NGRAMS_CATALOGUE)
+
+def _generate_catalogue_dictionary(file):
+    set_words = set()
+    file = open(file, 'r')
+    for line in file:
+        line_text = line.strip().lower().split(',')
+        words_list = line_text[0].split(' ')
+        for word in words_list:
+            set_words.add(word)
+    return set_words
 
 def _get_total_words_value(unigram_file):
     fp = open(unigram_file, 'r')
@@ -47,7 +60,7 @@ def _get_total_words_value(unigram_file):
     return set_words, words, sum(words.values())
 
 def build_prefix_set(set_words):
-    valid_prefixes = set([])
+    valid_prefixes = set()
     for word in set_words:
         for i in range(len(word) + 1):
             valid_prefixes.add(word[:i])
@@ -60,6 +73,7 @@ def suggestion(query):
     query_len = len(query_split)
 
     if query_len == 1:
+        # TODO new error model
         if query in valid_prex:
             for word in set_words:
                 if query in word[:len(query)]:
@@ -82,14 +96,15 @@ def suggestion(query):
         return get_best_n_bigram_suggestions(possible_suggestions, query, 10)
 
 
-set_words, WORDS, N = _get_total_words_value(
-    "../Data/conteggio_catalogo_nltk.txt")
+# set_words, WORDS, N = _get_total_words_value(UNIGRAM_CATALOGUE)
+N = 10
+set_words = _generate_catalogue_dictionary(NGRAMS_CATALOGUE)
 valid_prex = build_prefix_set(set_words)
 
 def get_best_n_suggestions(suggestions, n):
     digging_suggestions = dict()
     for suggestion in suggestions:
-        for w1 in model:
+        for w1 in product_model:
             value = generic_model[w1][suggestion]
             if value > 0:
                 if w1 is not None:
@@ -97,6 +112,9 @@ def get_best_n_suggestions(suggestions, n):
                 else:
                     key = suggestion
                 digging_suggestions[key] = value
+
+        for w2 in product_model[suggestion]:
+            digging_suggestions[suggestion + " " + w2] = generic_model[suggestion][w2]
 
     best_suggestions = sorted(digging_suggestions.items(),
                    key=lambda kv: kv[1],
@@ -123,14 +141,16 @@ def get_best_n_bigram_suggestions(suggestions, query, n):
 def P(word, N=N):
     return WORDS[word] / N
 
-def correction(word):
-    words = word.split()
+def correction(query):
+    words = query.split()
     if len(words) == 1:
-        candidates_list = list(candidates(word))
+        candidates_list = list(candidates(query))
 
-        if len(candidates_list) == 1 and candidates_list[0] == word:
+        # check if any known candidate exist
+        if len(candidates_list) == 1 and candidates_list[0] == query:
             candidates_list = []
-            p_candidates = prefix_candidates(word)
+            # genereation on prefix candidates
+            p_candidates = prefix_candidates(query)
             for p_c in p_candidates:
                 for w in set_words:
                     if p_c in w[:len(p_c)]:
@@ -138,7 +158,11 @@ def correction(word):
 
         bigram_candidates = dict()
         for c in candidates_list:
-            bigram_candidates[c] = model[None][c] * (WORDS[c] / N)
+            for w1 in product_model:
+                bigram_candidates[w1 + " " + c] = product_model[w1][c]
+            # bigram_candidates[c] = product_model[None][c] # * (WORDS[c] / N)
+            for w2 in product_model[c]:
+                bigram_candidates[c + " " + w2] = product_model[c][w2]
         return sorted(bigram_candidates.items(), key=lambda x: x[1],
                           reverse=True)
     else:
@@ -156,7 +180,7 @@ def correction(word):
 
         bigram_candidates = dict()
         for c in candidates_list:
-            bigram_candidates[c] = model[first_word][c] * (WORDS[c] / N)
+            bigram_candidates[c] = product_model[first_word][c] * (WORDS[c] / N)
 
         return sorted(bigram_candidates.items(), key=lambda x:x[1],reverse=True)
 
@@ -190,39 +214,41 @@ def edits2(word):
 
 if __name__ == "__main__":
 
-    print(suggestion("acciaio zinxat"))
-    print(suggestion("acciaio zinxa"))
-    print(suggestion("zinxa"))
-
-
-
+    # print(suggestion("acciaio zinxat"))
+    # print(suggestion("acciaio zinxa"))
+    # print(suggestion("zinxa"))
+    #
+    #
+    #
+    # # print(suggestion("ac"))
+    # # print(suggestion("accia"))
+    # # print(suggestion("acxi"))
+    # # print(correction("acxi"))
+    # # print(correction("acxia"))
+    # # print(correction("acxiai"))
+    # # print(correction("acxiaio"))
+    #
+    #
+    # print("### Acciaio ###")
+    # print(suggestion("a"))
     # print(suggestion("ac"))
-    # print(suggestion("accia"))
-    # print(suggestion("acxi"))
-    # print(correction("acxi"))
-    # print(correction("acxia"))
-    # print(correction("acxiai"))
-    # print(correction("acxiaio"))
+    # print(suggestion("acc"))
+    # print(suggestion("acco"))
+    # print(suggestion("accoao"))
+    # print(suggestion("accoaoo"))
+    #
+    # print("### Anelli ###")
+    # print(suggestion("a"))
+    # print(suggestion("an"))
+    # print(suggestion("anr"))
+    # print(suggestion("anrl"))
+    # print(suggestion("anrll"))
+    # print(suggestion("anrlli"))
+    # print(suggestion("anelli t"))
+    # print(suggestion("anelli te"))
+    #
+    #
+    # #TODO need fix
+    # print(suggestion("anello te"))
 
-
-    print("### Acciaio ###")
-    print(suggestion("a"))
-    print(suggestion("ac"))
-    print(suggestion("acc"))
-    print(suggestion("acco"))
-    print(suggestion("accoao"))
-    print(suggestion("accoaoo"))
-
-    print("### Anelli ###")
-    print(suggestion("a"))
-    print(suggestion("an"))
-    print(suggestion("anr"))
-    print(suggestion("anrl"))
-    print(suggestion("anrll"))
-    print(suggestion("anrlli"))
-    print(suggestion("anelli t"))
-    print(suggestion("anelli te"))
-
-
-    #TODO need fix
-    print(suggestion("anello te"))
+    print(suggestion("contatori"))
